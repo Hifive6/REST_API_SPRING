@@ -1,9 +1,14 @@
 package com.win.restexamplehw.controller;
 
+import com.win.restexamplehw.assembler.EmployeeModelAssember;
 import com.win.restexamplehw.domain.Employee;
 import com.win.restexamplehw.exceptions.EmployeeNotFoundException;
 import com.win.restexamplehw.repository.EmployeeRepository;
 
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.IanaLinkRelations;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,30 +17,49 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
+
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 public class EmployeeController {
     
     private final EmployeeRepository repo;
 
-    EmployeeController(EmployeeRepository repo){
+    private final EmployeeModelAssember assembler;
+
+    EmployeeController(EmployeeRepository repo, EmployeeModelAssember assembler){
         this.repo = repo;
+        this.assembler = assembler;
     }
 
     @GetMapping("/employees")
-    List<Employee> all(){
-        return repo.findAll();
-    }
+	public
+CollectionModel<EntityModel<Employee>> all() {
+
+  List<EntityModel<Employee>> employees = repo.findAll().stream()
+      .map(assembler :: toModel)
+      .collect(Collectors.toList());
+
+  return CollectionModel.of(employees, linkTo(methodOn(EmployeeController.class).all()).withSelfRel());
+}
 
     @PostMapping("/employees")
-    Employee newEmployee(@RequestBody Employee newEmployee){
-        return repo.save(newEmployee);
+    ResponseEntity<?> newEmployee(@RequestBody Employee newEmployee){
+        EntityModel<Employee> entityModel = assembler.toModel(repo.save(newEmployee));
+
+        return ResponseEntity
+            .created(entityModel.getRequiredLink(IanaLinkRelations.SELF).toUri())
+            .body(entityModel);
+    
     }
 
     @GetMapping("/employees/{id}")
-    Employee one(@PathVariable Long id){
-        return repo.findById(id).orElseThrow(() -> new EmployeeNotFoundException(id));
+	public
+    EntityModel<Employee> one(@PathVariable Long id){
+        Employee employee = repo.findById(id).orElseThrow(() -> new EmployeeNotFoundException(id));
+        return assembler.toModel(employee);
     }
 
     @PutMapping("/employees/{id}")
@@ -51,8 +75,9 @@ public class EmployeeController {
     }
 
     @DeleteMapping("/employees/{id}")
-    void deleteEmployee(@PathVariable Long id){
+    ResponseEntity<?> deleteEmployee(@PathVariable Long id){
         repo.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
 }
